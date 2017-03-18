@@ -4,6 +4,7 @@
 
 Just like functions, there are two ways to define a class in javascript: Class expression and class declaration
 
+
 ## Class Declaration
 
 To declare a class, you use the classkeyword with the name of the class
@@ -115,6 +116,10 @@ class Gender extends person {
 ```
 
 At this time, there isn’t any advantage to using classes over prototypes other than better syntax.
+
+## Criticism
+
+Some people would recommend avoiding using "class" syntactic sugar in ES6 at all because it only added more complexity and didn't solved any problem, moreover, this new class feature is confusing for people who don't know JS well and it also is very bad implemented, for example, you can't define properties at all. When you need to make some properties readonly, writable, configurable you still need to use Object/prototype syntax.
 
 # Resources
 
