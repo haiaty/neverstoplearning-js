@@ -112,7 +112,7 @@ class Gender extends person {
         return 'male' + super.toString();
     }
 }
-```js
+```
 
 At this time, there isn’t any advantage to using classes over prototypes other than better syntax.
 
