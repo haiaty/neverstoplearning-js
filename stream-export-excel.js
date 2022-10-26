@@ -1,16 +1,29 @@
+/*
+
+usage example:
+
+node '{"query": "select * from huge_table", "sheet_headers":['id', 'name'], "max_num_rows_per_sheet": 5, ""max_num_rows_per_file":5, "save_to_path": "myarchive.zip" }
+
+
+*/
+
+
 "use strict";
 const exceljs = require('exceljs')
 var fs = require('fs');
 const LoadConfigs = require("../../LoadConfigs")
 const GetMariaDbConnection = require("../jobs/GetMariaDbConnection");
+const ApplyTrasformations = require("./ApplyTrasformations");
+const stream = require('stream');
 
-async function GenerateExcelsFromSqlQuery(inputs) {
+
+async function GenerateExcelsFromSqlQuery(inputs, transformations) {
 
     const configs = LoadConfigs();
 
-    const dbConnection = await GetMariaDbConnection(configs);
+    const dbConnection = await GetMariaDbConnection();
 
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         //===================
         // crete temporary folders to hold generated excels
         //============================
@@ -25,7 +38,22 @@ async function GenerateExcelsFromSqlQuery(inputs) {
         var query = inputs.query;
 
 
-        var finalStream = dbConnection.query(query).stream({highWaterMark: 1000});
+        // this is the stream that gets the data
+        // from database
+        var queryStream = dbConnection.query(query).stream({highWaterMark: 1000});
+
+        // we passthrough the querystream because the querystream is not async iterable. Indeed
+        // I've got the error: TypeError: finalStream is not async iterable
+        // so we passthrough in order to have an async iterable and we can use the 'for await'
+        // Why do we need an async iterable stream? Because in order to close the workbook
+        // we need to call an async function otherwise it won't work correctly.
+        var finalStream = queryStream.pipe(new stream.PassThrough({objectMode: true}));
+
+        // use to stop the final stream otherwise it will be not be closed and will hang up
+        queryStream.on('end', async function () {
+            finalStream.emit('end');
+        });
+
 
         //================
         // create first excel
@@ -47,10 +75,9 @@ async function GenerateExcelsFromSqlQuery(inputs) {
         // we don't know how many excels will be created
 
         var currentFileNumber = 1;
-        var currentFileName = tempFolderToHoldExcels + "/report_" + currentFileNumber + ".xls";
-        //var writeStream = fs.createWriteStream("./export_" + currentFileNumber + ".xls");
+        var currentFileName = tempFolderToHoldExcels + "/report_" + currentFileNumber + ".xlsx";
+
         var options = {
-            //stream: writeStream,
             filename: currentFileName,
             useStyles: true,
             useSharedStrings: false,
@@ -73,22 +100,25 @@ async function GenerateExcelsFromSqlQuery(inputs) {
         var numOfRecordsWrittenOnCurrentFile = 1;//it starts from 1 because we have written the headers
 
 
+        // stream async iterable - see here for more info: https://ljn.io/posts/async-stream-handlers
+        for await (var record of finalStream) {
 
-        finalStream.on('data', function (d) {
-
+            //===========================
+            // apply transformations on record before write it in the excel
+            //==========================
+            record = ApplyTrasformations(record, transformations);
             //===========================
             // Verify if a new file should be created
             //==========================
             if(numOfRecordsWrittenOnCurrentFile === inputs.max_num_rows_per_file) {
 
                 sheet.commit();
-                workbook.commit();
+                await workbook.commit();
                 generatedExcelFiles.push(currentFileName);
                 currentFileNumber++;
-                currentFileName = tempFolderToHoldExcels + "/report_" + currentFileNumber + ".xls";
+                currentFileName = tempFolderToHoldExcels + "/report_" + currentFileNumber + ".xlsx";
 
                 options = {
-                    //stream: res,  -- for http response - see https://github.com/sd50712321/large-excel-stream-with-mysql-example/blob/main/routes/index.js
                     filename: currentFileName,
                     useStyles: true,
                     useSharedStrings: false,
@@ -110,7 +140,7 @@ async function GenerateExcelsFromSqlQuery(inputs) {
 
 
                 //add the current record to the sheet
-                sheet.addRow(Object.values(d)).commit(); // format object if required
+                sheet.addRow(Object.values(record)).commit(); // format object if required
                 //increment counters
                 numOfRecordsWrittenOnCurrentSheet++;
                 numOfRecordsWrittenOnCurrentFile++;
@@ -137,7 +167,7 @@ async function GenerateExcelsFromSqlQuery(inputs) {
                     numOfRecordsWrittenOnCurrentSheet = 1;
 
                     //add the current record to the sheet
-                    sheet.addRow(Object.values(d)).commit(); // format object if required
+                    sheet.addRow(Object.values(record)).commit(); // format object if required
 
                     //increment counters
                     numOfRecordsWrittenOnCurrentSheet++;
@@ -147,7 +177,7 @@ async function GenerateExcelsFromSqlQuery(inputs) {
                 } else {
                     //simply add to the current sheet
                     //add the current record to the sheet
-                    sheet.addRow(Object.values(d)).commit(); // format object if required
+                    sheet.addRow(Object.values(record)).commit(); // format object if required
                     //increment counters
                     numOfRecordsWrittenOnCurrentSheet++;
                     numOfRecordsWrittenOnCurrentFile++;
@@ -155,10 +185,9 @@ async function GenerateExcelsFromSqlQuery(inputs) {
 
                 }
             }
+        }
 
 
-
-        });
 
         finalStream.on('end', async function () {
 
