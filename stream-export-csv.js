@@ -29,87 +29,75 @@ async function GenerateCsvsFromSqlQuery(inputs, transformations) {
         await SetLoggedUserId(dbConnection, inputs['user_id']);
     }
 
-    return new Promise(async (resolve, reject) => {
+    //===================
+    // crete temporary folders to hold generated files
+    //============================
+    var now = new Date();
+    var folder_name = now.getFullYear() + "_" + (now.getMonth() + 1) + "_" + now.getDate() + "_" + Date.now();
+    var tempFolderToHoldExcels = configs.ROOT_PATH + "/exports/" + folder_name;
 
-        try {
-            //===================
-            // crete temporary folders to hold generated files
-            //============================
-            var now = new Date();
-            var folder_name = now.getFullYear() + "_" + (now.getMonth() + 1) + "_" + now.getDate() + "_" + Date.now();
-            var tempFolderToHoldExcels = configs.ROOT_PATH + "/exports/" + folder_name;
-            fs.mkdirSync(tempFolderToHoldExcels);
+    fs.mkdirSync(tempFolderToHoldExcels, { recursive: true });
 
-            //================
-            // define Csv file name
-            //====================
-            var generatedFiles = [];
-            var fileName = tempFolderToHoldExcels + "/report.txt";
+    //================
+    // define Csv file name
+    //====================
+    var generatedFiles = [];
+    var fileName = tempFolderToHoldExcels + "/report.txt";
 
-            //==============
-            // create the stream to write to the file
-            //=================
-            var writeStream = fs.createWriteStream(fileName);
+    //==============
+    // create the stream to write to the file
+    //=================
+    var writeStream = fs.createWriteStream(fileName);
 
-
-            //=================
-            // SET QUERY IN STREAM MODE
-            //===================
-            var query = inputs.query;
-
-
-            // this is the stream that gets the data
-            // from database
-            var queryStream = dbConnection.query(query).stream({highWaterMark: 1000});
-
-            // NOTE: for more documentation on the stringify API for writing/working with csv
-            // take a look at: https://csv.js.org/stringify/api/
-
-            var queryStreamAsyncStreamIterator = queryStream.pipe(new stream.PassThrough({objectMode: true}));
-
-            // this is the stream to create the csv
-            var stringifier = stringify.stringify({
-                header: true,
-                columns: inputs.headers,
-                delimiter: inputs.delimiter
-            });
-
-            //...that will write in the file stream
-            stringifier.pipe(writeStream);
-
-
-            for await (var record of queryStreamAsyncStreamIterator) {
-                record = ApplyTrasformations(record, transformations);
-                stringifier.write(record);
-            }
-
-            stringifier.end();
-
-
-            writeStream.on('finish', async function () {
-
-
-                generatedFiles.push(fileName);
-
-                //======================
-                // destroy database connection
-                //========================
-                dbConnection.destroy();
-
-                resolve(generatedFiles);
-
-            });
-
-            writeStream.on('error', function (err) {
-                throw err;
-            });
-
-        }catch (e){
-            reject(e);
-        }
-
+    writeStream.on('error', function (err) {
+        throw err;
     });
 
+
+    //=================
+    // SET QUERY IN STREAM MODE
+    //===================
+    var query = inputs.query;
+
+
+    // this is the stream that gets the data
+    // from database
+    var queryStream = dbConnection.query(query).stream({highWaterMark: 1000});
+
+    // NOTE: for more documentation on the stringify API for writing/working with csv
+    // take a look at: https://csv.js.org/stringify/api/
+
+    var queryStreamAsyncStreamIterator = queryStream.pipe(new stream.PassThrough({objectMode: true}));
+
+    // this is the stream to create the csv
+    var stringifier = stringify.stringify({
+        header: true,
+        columns: inputs.csv_headers,
+        delimiter: inputs.delimiter
+    });
+
+    //...that will write in the file stream
+    stringifier.pipe(writeStream);
+
+
+    for await (var record of queryStreamAsyncStreamIterator) {
+        record = ApplyTrasformations(record, transformations);
+        stringifier.write(record);
+    }
+
+    stringifier.end();
+
+    generatedFiles.push(fileName);
+
+    //======================
+    // destroy database connection
+    //========================
+    dbConnection.destroy();
+
+    return generatedFiles
+
 }
+
+module.exports = GenerateCsvsFromSqlQuery;
 
 module.exports = GenerateCsvsFromSqlQuery;
