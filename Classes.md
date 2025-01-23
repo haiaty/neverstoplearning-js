@@ -2,7 +2,8 @@
 
 # Classes
 
-Just like functions, there are two ways to define a class in javascript: Class expression and class declaration
+Just like functions, there are two ways to define a class in javascript: Class expression and class declaration.
+
 
 
 ## Class Declaration
